@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+JAR="${LANGSTITCH_SPRING_AI_JAR:-$ROOT/target/langstitch-spring-ai-0.1.0-SNAPSHOT.jar}"
+if [[ ! -f "$JAR" ]]; then
+  echo "error: jar not found: $JAR" >&2
+  echo "Build with: mvn -q package" >&2
+  echo "Or set LANGSTITCH_SPRING_AI_JAR to the fat jar path." >&2
+  exit 1
+fi
+exec java -jar "$JAR" "$@"
