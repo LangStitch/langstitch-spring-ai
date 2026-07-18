@@ -11,7 +11,7 @@ name: Publish
 #
 # Prerequisites (one-time, outside CI):
 #   1. Create a Central Portal account: https://central.sonatype.com/
-#   2. Claim / verify the `com.langstitch` namespace
+#   2. Claim / verify the `org.langstitch` namespace (DNS TXT on langstitch.com)
 #   3. Generate a portal user token and store as MAVEN_USERNAME / MAVEN_PASSWORD
 #   4. Create a GPG key, publish the public key to a keyserver, store private key + passphrase
 

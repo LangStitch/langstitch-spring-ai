@@ -21,7 +21,7 @@ After the first release is published:
 
 ```xml
 <dependency>
-  <groupId>com.langstitch</groupId>
+  <groupId>org.langstitch</groupId>
   <artifactId>langstitch-spring-ai</artifactId>
   <version>0.1.0</version>
 </dependency>
@@ -31,7 +31,7 @@ Runnable fat jar (classifier `all`):
 
 ```bash
 mvn -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy \
-  -Dartifact=com.langstitch:langstitch-spring-ai:0.1.0:jar:all \
+  -Dartifact=org.langstitch:langstitch-spring-ai:0.1.0:jar:all \
   -DoutputDirectory=.
 java -jar langstitch-spring-ai-0.1.0-all.jar version
 ```
@@ -61,7 +61,7 @@ Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/p
 ### One-time setup
 
 1. Create a [Central Publisher Portal](https://central.sonatype.com/) account.
-2. Claim / verify the `com.langstitch` namespace (DNS or GitHub verification).
+2. Claim / verify the `org.langstitch` namespace (DNS TXT on `langstitch.com` — see below).
 3. Generate a [portal user token](https://central.sonatype.org/publish/generate-portal-token/).
 4. Create a GPG key and publish the public key to a keyserver (`keys.openpgp.org` or `keyserver.ubuntu.com`).
 5. In the GitHub repo, create an Environment named `maven-central` (optional protection rules).
@@ -73,6 +73,21 @@ Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/p
 | `MAVEN_PASSWORD` | Central Portal token password |
 | `GPG_PRIVATE_KEY` | ASCII-armored private key (`gpg --export-secret-keys --armor <KEYID>`) |
 | `GPG_PASSPHRASE` | Passphrase for that key |
+
+### Verify `org.langstitch`
+
+Until the namespace shows **Verified**, Central will reject publishes under `org.langstitch`.
+
+1. In Central Portal → Publishing Settings → Namespace → `org.langstitch`, copy the verification key.
+2. Add a DNS **TXT** record on the apex (or as directed by the portal) for `langstitch.com`, e.g.:
+
+   ```
+   Host / name:  @   (or the exact host the portal shows)
+   Type:         TXT
+   Value:        <verification-key-from-portal>
+   ```
+
+3. Wait for DNS propagation, then click **Verify Namespace** in the portal.
 
 ### Release
 
