@@ -1,4 +1,13 @@
-<?xml version="1.0" encoding="UTF-8"?>
+"""Generate pom.xml with correct Maven Central metadata (avoids XML name-tag mangling)."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# Build the name element without embedding a literal "<name>" in this source if tools strip it.
+NAME_OPEN = "<" + "name" + ">"
+NAME_CLOSE = "</" + "name" + ">"
+
+POM = f"""<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -9,14 +18,14 @@
   <version>0.1.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>langstitch-spring-ai</name>
+  {NAME_OPEN}langstitch-spring-ai{NAME_CLOSE}
   <description>LangStitch IR v2 compiler targeting Spring AI (Java)</description>
   <url>https://github.com/LangStitch/langstitch-spring-ai</url>
   <inceptionYear>2026</inceptionYear>
 
   <licenses>
     <license>
-      <name>MIT License</name>
+      {NAME_OPEN}MIT License{NAME_CLOSE}
       <url>https://opensource.org/licenses/MIT</url>
       <distribution>repo</distribution>
     </license>
@@ -25,7 +34,7 @@
   <developers>
     <developer>
       <id>langstitch</id>
-      <name>LangStitch</name>
+      {NAME_OPEN}LangStitch{NAME_CLOSE}
       <organization>LangStitch</organization>
       <organizationUrl>https://langstitch.com</organizationUrl>
     </developer>
@@ -56,12 +65,12 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
+      <version>${{jackson.version}}</version>
     </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.datatype</groupId>
       <artifactId>jackson-datatype-jsr310</artifactId>
-      <version>${jackson.version}</version>
+      <version>${{jackson.version}}</version>
     </dependency>
     <dependency>
       <groupId>info.picocli</groupId>
@@ -71,7 +80,7 @@
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
-      <version>${junit.version}</version>
+      <version>${{junit.version}}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -83,7 +92,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <release>${maven.compiler.release}</release>
+          <release>${{maven.compiler.release}}</release>
           <compilerArgs>
             <arg>-parameters</arg>
           </compilerArgs>
@@ -201,7 +210,7 @@
           <plugin>
             <groupId>org.sonatype.central</groupId>
             <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>${central.publishing.version}</version>
+            <version>${{central.publishing.version}}</version>
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>
@@ -214,3 +223,16 @@
     </profile>
   </profiles>
 </project>
+"""
+
+# The f-string doubled braces for ${...}; fix accidental ${{central...}} left as Maven props.
+POM = POM.replace("${{central.publishing.version}}", "${central.publishing.version}")
+POM = POM.replace("${{jackson.version}}", "${jackson.version}")
+POM = POM.replace("${{junit.version}}", "${junit.version}")
+POM = POM.replace("${{maven.compiler.release}}", "${maven.compiler.release}")
+
+out = ROOT / "pom.xml"
+out.write_text(POM, encoding="utf-8", newline="\n")
+# Verify name element
+assert ("<" + "name" + ">langstitch-spring-ai</" + "name" + ">") in out.read_text(encoding="utf-8")
+print(f"Wrote {out}")

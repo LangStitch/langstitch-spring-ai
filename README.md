@@ -15,26 +15,76 @@ langstitch-spring-ai version
 - Java 21+
 - Maven 3.9+
 
-## Build
+## Install (Maven Central)
+
+After the first release is published:
+
+```xml
+<dependency>
+  <groupId>com.langstitch</groupId>
+  <artifactId>langstitch-spring-ai</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+Runnable fat jar (classifier `all`):
+
+```bash
+mvn -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy \
+  -Dartifact=com.langstitch:langstitch-spring-ai:0.1.0:jar:all \
+  -DoutputDirectory=.
+java -jar langstitch-spring-ai-0.1.0-all.jar version
+```
+
+## Build locally
 
 ```bash
 mvn -q package
-# runnable fat jar:
-java -jar target/langstitch-spring-ai-0.1.0-SNAPSHOT.jar compile path/to/doc.langstitch.json --out ./out --force
+# thin jar:  target/langstitch-spring-ai-*-SNAPSHOT.jar
+# fat CLI:   target/langstitch-spring-ai-*-SNAPSHOT-all.jar
+java -jar target/langstitch-spring-ai-*-SNAPSHOT-all.jar compile path/to/doc.langstitch.json --out ./out --force
 ```
 
 Install a `langstitch-spring-ai` shim on your `PATH` so LangTailor can discover the CLI:
 
 ```bash
-# after mvn package
-# Windows: add scripts/ to PATH, or copy scripts/langstitch-spring-ai.cmd
-# Unix:
 chmod +x scripts/langstitch-spring-ai
 export PATH="$PWD/scripts:$PATH"
 ```
 
-Or set `LANGSTITCH_SPRING_AI_JAR` to the fat-jar path; LangTailor also auto-discovers a sibling
-`langstitch-spring-ai/target/*.jar` in a polyrepo workspace checkout.
+Or set `LANGSTITCH_SPRING_AI_JAR` to the `*-all.jar` path.
+
+## Publish to Maven Central
+
+Publishing is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+
+### One-time setup
+
+1. Create a [Central Publisher Portal](https://central.sonatype.com/) account.
+2. Claim / verify the `com.langstitch` namespace (DNS or GitHub verification).
+3. Generate a [portal user token](https://central.sonatype.org/publish/generate-portal-token/).
+4. Create a GPG key and publish the public key to a keyserver (`keys.openpgp.org` or `keyserver.ubuntu.com`).
+5. In the GitHub repo, create an Environment named `maven-central` (optional protection rules).
+6. Add repository (or environment) secrets:
+
+| Secret | Value |
+|--------|-------|
+| `MAVEN_USERNAME` | Central Portal token username |
+| `MAVEN_PASSWORD` | Central Portal token password |
+| `GPG_PRIVATE_KEY` | ASCII-armored private key (`gpg --export-secret-keys --armor <KEYID>`) |
+| `GPG_PASSPHRASE` | Passphrase for that key |
+
+### Release
+
+```bash
+# on main, after CI is green
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Or create a GitHub Release for `v0.1.0`, or run **Actions → Publish → Run workflow** with version `0.1.0`.
+
+The workflow sets the POM version from the tag, runs tests, signs artifacts, and deploys with the `release` Maven profile (`central-publishing-maven-plugin`, `autoPublish=true`).
 
 ## Capability matrix
 

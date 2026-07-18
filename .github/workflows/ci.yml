@@ -29,5 +29,5 @@ jobs:
 
       - name: Smoke CLI
         run: |
-          java -jar target/langstitch-spring-ai-*-SNAPSHOT.jar version
-          java -jar target/langstitch-spring-ai-*-SNAPSHOT.jar capabilities
+          java -jar target/langstitch-spring-ai-*-SNAPSHOT-all.jar version
+          java -jar target/langstitch-spring-ai-*-SNAPSHOT-all.jar capabilities

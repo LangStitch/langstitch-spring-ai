@@ -1,0 +1,120 @@
+name: Publish
+
+# Publishes langstitch-spring-ai to Maven Central (Central Publisher Portal)
+# when a tag like v0.1.0 is pushed (or a matching GitHub Release is published).
+#
+# Required repository secrets:
+#   MAVEN_USERNAME          — Central Portal user token username
+#   MAVEN_PASSWORD          — Central Portal user token password
+#   GPG_PRIVATE_KEY         — ASCII-armored GPG private key used to sign artifacts
+#   GPG_PASSPHRASE          — passphrase for that key
+#
+# Prerequisites (one-time, outside CI):
+#   1. Create a Central Portal account: https://central.sonatype.com/
+#   2. Claim / verify the `com.langstitch` namespace
+#   3. Generate a portal user token and store as MAVEN_USERNAME / MAVEN_PASSWORD
+#   4. Create a GPG key, publish the public key to a keyserver, store private key + passphrase
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.1.0). Leave empty to use the current pom version.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+            VERSION="${VERSION%-SNAPSHOT}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+            echo "Invalid version: $VERSION" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" == *-SNAPSHOT ]]; then
+            echo "Refusing to publish a SNAPSHOT version to Maven Central: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $VERSION"
+
+      - name: Set project version
+        run: |
+          mvn -B versions:set -DnewVersion="${{ steps.ver.outputs.version }}" -DgenerateBackupPoms=false
+          python - <<'PY'
+          from pathlib import Path
+          import os, re
+          version = os.environ["VERSION"]
+          path = Path("src/main/java/com/langstitch/springai/compiler/Version.java")
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(
+              r'COMPILER_VERSION = "[^"]+"',
+              f'COMPILER_VERSION = "{version}"',
+              text,
+          )
+          path.write_text(text, encoding="utf-8")
+          print(f"Updated Version.java -> {version}")
+          PY
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Test
+        run: mvn -B test
+
+      - name: Publish to Maven Central
+        run: mvn -B -Prelease deploy -DskipTests
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Upload GitHub Release assets
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          files: |
+            target/langstitch-spring-ai-${{ steps.ver.outputs.version }}.jar
+            target/langstitch-spring-ai-${{ steps.ver.outputs.version }}-all.jar
+            target/langstitch-spring-ai-${{ steps.ver.outputs.version }}-sources.jar
+            target/langstitch-spring-ai-${{ steps.ver.outputs.version }}-javadoc.jar
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

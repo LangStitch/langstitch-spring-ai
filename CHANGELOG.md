@@ -11,3 +11,5 @@ All notable changes to **langstitch-spring-ai** are documented here.
 - Build manifest (`.langstitch-build-manifest.json`) preserving IR node ids.
 - Conformance tests against sibling `langstitch-spec/fixtures` when present.
 - UTF-8 BOM stripping on IR document load (Windows-friendly).
+- Maven Central publish pipeline (`.github/workflows/publish.yml`) using the Central Portal
+  plugin, GPG signing, sources/javadoc jars, and a fat CLI jar classifier `all`.
