@@ -13,7 +13,7 @@ POM = f"""<?xml version="1.0" encoding="UTF-8"?>
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>org.langstitch</groupId>
+  <groupId>com.langstitch</groupId>
   <artifactId>langstitch-spring-ai</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>jar</packaging>

@@ -13,4 +13,4 @@ All notable changes to **langstitch-spring-ai** are documented here.
 - UTF-8 BOM stripping on IR document load (Windows-friendly).
 - Maven Central publish pipeline (`.github/workflows/publish.yml`) using the Central Portal
   plugin, GPG signing, sources/javadoc jars, and a fat CLI jar classifier `all`.
-- Maven `groupId` set to `org.langstitch` (matches Central Portal namespace).
+- Maven `groupId` set to `com.langstitch` (reverse-DNS for langstitch.com).
