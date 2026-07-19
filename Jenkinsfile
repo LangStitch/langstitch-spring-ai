@@ -17,7 +17,10 @@ spec:
       defaultContainer 'maven'
     }
   }
-  options { timeout(time: 45, unit: 'MINUTES') }
+  options {
+    disableConcurrentBuilds()
+    lock('langstitch-global')
+    timeout(time: 45, unit: 'MINUTES') }
   stages {
     stage('Test & package') {
       steps {
