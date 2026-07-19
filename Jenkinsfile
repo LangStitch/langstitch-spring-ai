@@ -17,7 +17,7 @@ spec:
       defaultContainer 'maven'
     }
   }
-  options { timestamps(); timeout(time: 45, unit: 'MINUTES') }
+  options { timeout(time: 45, unit: 'MINUTES') }
   stages {
     stage('Test & package') {
       steps {
