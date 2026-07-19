@@ -185,6 +185,67 @@ class SpringAiCompilerTest {
   }
 
   @Test
+  void compilesMcpToolNode() {
+    String json =
+        """
+        {
+          "irVersion": "2.0.0",
+          "name": "unit_test",
+          "projectVersion": "0.1.0",
+          "logical": {
+            "entryGraphId": "main",
+            "graphs": [{
+              "id": "main",
+              "name": "Main",
+              "stateFields": [],
+              "nodes": [
+                { "id": "start-1", "kind": "start", "label": "Start" },
+                {
+                  "id": "tool-1",
+                  "kind": "tool",
+                  "label": "MCP Tool",
+                  "connectionType": "mcp",
+                  "mcpServerId": "fs",
+                  "mcpToolName": "read_file",
+                  "inputKey": "path",
+                  "outputKey": "content"
+                },
+                { "id": "end-1", "kind": "end", "label": "End" }
+              ],
+              "edges": [
+                { "id": "e1", "source": "start-1", "target": "tool-1" },
+                { "id": "e2", "source": "tool-1", "target": "end-1" }
+              ]
+            }],
+            "mcpServers": [
+              {
+                "id": "fs",
+                "name": "Filesystem",
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+                "tools": [{ "name": "read_file", "description": "Read a file" }]
+              }
+            ],
+            "settings": { "logging": { "level": "info", "format": "json", "sink": "stdout" } }
+          },
+          "target": { "platform": "spring-ai", "options": {} }
+        }
+        """;
+    CompileResult result = SpringAiEmitter.compile(IrLoader.loadJson(json));
+    assertTrue(result.files().containsKey("src/main/java/com/langstitch/unittest/mcp/McpToolClient.java"));
+    assertTrue(result.files().get("application.yaml").contains("mcp:"));
+    String tool =
+        result.files().entrySet().stream()
+            .filter(e -> e.getKey().endsWith("/nodes/Tool1Node.java"))
+            .map(Map.Entry::getValue)
+            .findFirst()
+            .orElseThrow();
+    assertTrue(tool.contains("McpToolClient"));
+    assertTrue(tool.contains("callTool"));
+  }
+
+  @Test
   void customNodeWithoutSpringTemplateFails() {
     String json =
         """

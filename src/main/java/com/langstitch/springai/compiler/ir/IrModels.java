@@ -34,7 +34,26 @@ public final class IrModels {
     public List<ConfigSection> configuration = new ArrayList<>();
     public List<ComponentDef> componentRegistry = new ArrayList<>();
     public List<ToolDef> toolRegistry = new ArrayList<>();
+    public List<McpServerDef> mcpServers = new ArrayList<>();
     public Settings settings = new Settings();
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public static class McpServerDef {
+    public String id;
+    public String name;
+    public String transport = "stdio";
+    public String command;
+    public List<String> args = new ArrayList<>();
+    public String url;
+    public Map<String, String> envVars = new LinkedHashMap<>();
+    public List<McpToolDef> tools = new ArrayList<>();
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public static class McpToolDef {
+    public String name;
+    public String description;
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)

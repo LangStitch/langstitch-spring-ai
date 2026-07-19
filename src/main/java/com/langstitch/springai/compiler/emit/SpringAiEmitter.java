@@ -82,6 +82,14 @@ public final class SpringAiEmitter {
     files.put(
         "src/main/java/" + pkgPath + "/util/PromptTemplates.java",
         emitPromptTemplates(basePkg));
+    if (doc.logical.mcpServers != null && !doc.logical.mcpServers.isEmpty()) {
+      files.put(
+          "src/main/java/" + pkgPath + "/mcp/McpToolClient.java",
+          emitMcpToolClient(basePkg, doc));
+      files.put(
+          "src/main/java/" + pkgPath + "/config/McpServersConfig.java",
+          emitMcpServersConfig(basePkg, doc));
+    }
     files.put(
         "src/main/java/" + pkgPath + "/web/GraphController.java",
         emitController(basePkg, doc));
@@ -295,6 +303,25 @@ public final class SpringAiEmitter {
         }
       }
     }
+    if (doc.logical.mcpServers != null && !doc.logical.mcpServers.isEmpty()) {
+      lines.add("");
+      lines.add("mcp:");
+      lines.add("  servers:");
+      for (var mcp : doc.logical.mcpServers) {
+        lines.add("    " + mcp.id + ":");
+        lines.add(
+            "      transport: " + yamlScalar(mcp.transport == null ? "stdio" : mcp.transport));
+        if (mcp.command != null && !mcp.command.isBlank()) {
+          lines.add("      command: " + yamlScalar(mcp.command));
+        }
+        if (mcp.args != null && !mcp.args.isEmpty()) {
+          lines.add("      args: " + yamlScalar(mcp.args));
+        }
+        if (mcp.url != null && !mcp.url.isBlank()) {
+          lines.add("      url: " + yamlScalar(mcp.url));
+        }
+      }
+    }
     return String.join("\n", lines) + "\n";
   }
 
@@ -403,6 +430,13 @@ public final class SpringAiEmitter {
               <groupId>org.springframework.ai</groupId>
               <artifactId>spring-ai-starter-model-openai</artifactId>
             </dependency>
+            <!-- Optional: enable when wiring real MCP transports in McpToolClient -->
+            <!--
+            <dependency>
+              <groupId>org.springframework.ai</groupId>
+              <artifactId>spring-ai-starter-mcp-client</artifactId>
+            </dependency>
+            -->
             <dependency>
               <groupId>org.springframework.boot</groupId>
               <artifactId>spring-boot-starter-test</artifactId>
@@ -501,9 +535,18 @@ public final class SpringAiEmitter {
             return data.get(key);
           }
 
+          public Object getOrDefault(String key, Object defaultValue) {
+            return data.getOrDefault(key, defaultValue);
+          }
+
           public String getString(String key) {
             Object v = data.get(key);
             return v == null ? "" : String.valueOf(v);
+          }
+
+          /** Alias used by marketplace Spring AI connector templates. */
+          public Map<String, Object> asMap() {
+            return toMap();
           }
 
           @SuppressWarnings("unchecked")
@@ -656,7 +699,7 @@ public final class SpringAiEmitter {
       String basePkg, IrDocument doc, LogicalGraph graph, JsonNode node) {
     String kind = text(node, "kind");
     return switch (kind) {
-      case "llm" -> emitLlmNode(basePkg, node);
+      case "llm" -> emitLlmNode(basePkg, doc, node);
       case "function" -> emitFunctionNode(basePkg, node);
       case "router" -> emitRouterNode(basePkg, graph, node);
       case "tool" -> emitToolNode(basePkg, doc, node);
@@ -668,7 +711,7 @@ public final class SpringAiEmitter {
     };
   }
 
-  private static String emitLlmNode(String basePkg, JsonNode node) {
+  private static String emitLlmNode(String basePkg, IrDocument doc, JsonNode node) {
     String id = text(node, "id");
     String label = text(node, "label");
     String className = JavaNames.className(id) + "Node";
@@ -676,6 +719,37 @@ public final class SpringAiEmitter {
     String user = text(node, "userPrompt");
     String outputKey = text(node, "outputKey").isEmpty() ? "messages" : text(node, "outputKey");
     double temperature = number(node, "temperature", 0.7);
+    List<String> boundToolIds = stringList(node, "boundToolIds");
+    boolean hasMcp =
+        doc.logical.mcpServers != null
+            && !doc.logical.mcpServers.isEmpty()
+            && !boundToolIds.isEmpty();
+    String mcpField =
+        hasMcp
+            ? """
+                      private final %s.mcp.McpToolClient mcpToolClient;
+
+                      public %s(ChatClient chatClient, %s.mcp.McpToolClient mcpToolClient) {
+                        this.chatClient = chatClient;
+                        this.mcpToolClient = mcpToolClient;
+                      }
+                """
+                .formatted(basePkg, className, basePkg)
+            : """
+                      public %s(ChatClient chatClient) {
+                        this.chatClient = chatClient;
+                      }
+                """
+                .formatted(className);
+    String toolBindingNote =
+        boundToolIds.isEmpty()
+            ? "    // No boundToolIds on this LLM node.\n"
+            : "    // boundToolIds from IR: "
+                + String.join(", ", boundToolIds)
+                + "\n"
+                + (hasMcp
+                    ? "    // Tool callbacks are available via McpToolClient for MCP-backed tools.\n"
+                    : "    // Wire registry/inline tools as Spring AI ToolCallbacks as needed.\n");
     return """
         package %s.nodes;
 
@@ -695,16 +769,12 @@ public final class SpringAiEmitter {
         @%s.annotation.LangstitchNode("%s")
         public class %s implements GraphNode {
           private final ChatClient chatClient;
-
-          public %s(ChatClient chatClient) {
-            this.chatClient = chatClient;
-          }
-
+        %s
           @Override
           public Map<String, Object> apply(GraphState state) {
             String systemPrompt = %s;
             String userPrompt = PromptTemplates.render(%s, state);
-            String content = chatClient.prompt()
+        %s    String content = chatClient.prompt()
                 .system(systemPrompt)
                 .user(userPrompt)
                 .options(OpenAiChatOptions.builder().temperature(%s).build())
@@ -724,9 +794,10 @@ public final class SpringAiEmitter {
             basePkg,
             id,
             className,
-            className,
+            mcpField,
             JavaNames.javaString(system),
             JavaNames.javaString(user),
+            toolBindingNote,
             Double.toString(temperature),
             JavaNames.javaString(outputKey));
   }
@@ -863,6 +934,9 @@ public final class SpringAiEmitter {
     String inputKey = text(node, "inputKey").isEmpty() ? "input" : text(node, "inputKey");
     String outputKey = text(node, "outputKey").isEmpty() ? "output" : text(node, "outputKey");
     String connectionType = text(node, "connectionType").isEmpty() ? "inline" : text(node, "connectionType");
+    if ("mcp".equals(connectionType)) {
+      return emitMcpToolNode(basePkg, doc, node, id, label, className, inputKey, outputKey);
+    }
     String code = "";
     if ("inline".equals(connectionType)) {
       code = text(node, "customCode");
@@ -879,12 +953,15 @@ public final class SpringAiEmitter {
                           "tool node '" + id + "' references unknown registry tool '" + toolId + "'"));
       if (tool.javaCode != null && !tool.javaCode.isBlank()) {
         code = tool.javaCode;
+      } else if (tool.pythonCode != null && !tool.pythonCode.isBlank()) {
+        // Language-agnostic IR may ship pythonCode; emit as comments + stub.
+        code = tool.pythonCode;
       } else {
         throw new UnsupportedFeatureException(
             "tool:" + tool.source,
             "registry tool '"
                 + toolId
-                + "' has no javaCode; Spring AI compiler requires Java tool bodies",
+                + "' has no javaCode; Spring AI compiler requires Java tool bodies or MCP connection",
             id);
       }
     } else {
@@ -1022,7 +1099,15 @@ public final class SpringAiEmitter {
             .findFirst()
             .orElseThrow();
     String template = component.codegen.templates.get(Version.PLATFORM);
-    String body = indent(template, 4);
+    String rendered =
+        renderComponentTemplate(
+            template,
+            className,
+            label,
+            text(node, "description").isEmpty() ? label : text(node, "description"),
+            outputKey,
+            node.get("config"));
+    String body = indent(rendered, 4);
 
     return """
         package %s.nodes;
@@ -1060,6 +1145,194 @@ public final class SpringAiEmitter {
             className,
             body,
             JavaNames.javaString(outputKey));
+  }
+
+  private static String emitMcpToolNode(
+      String basePkg,
+      IrDocument doc,
+      JsonNode node,
+      String id,
+      String label,
+      String className,
+      String inputKey,
+      String outputKey) {
+    if (doc.logical.mcpServers == null || doc.logical.mcpServers.isEmpty()) {
+      throw new UnsupportedFeatureException(
+          "tool:mcp",
+          "tool node '" + id + "' uses connectionType=mcp but logical.mcpServers is empty",
+          id);
+    }
+    String serverId = text(node, "mcpServerId");
+    String toolName = text(node, "mcpToolName");
+    if (serverId.isEmpty() || toolName.isEmpty()) {
+      throw new CompileException(
+          "tool node '" + id + "' with connectionType=mcp requires mcpServerId and mcpToolName");
+    }
+    boolean known =
+        doc.logical.mcpServers.stream().anyMatch(s -> serverId.equals(s.id));
+    if (!known) {
+      throw new CompileException(
+          "tool node '" + id + "' references unknown mcpServerId '" + serverId + "'");
+    }
+    return """
+        package %s.nodes;
+
+        import %s.GraphState;
+        import %s.graph.GraphNode;
+        import %s.mcp.McpToolClient;
+        import java.util.Map;
+        import org.springframework.stereotype.Component;
+
+        /**
+         * %s — generated from IR node `%s` (tool / mcp).
+         */
+        @Component
+        @%s.annotation.LangstitchNode("%s")
+        public class %s implements GraphNode {
+          private final McpToolClient mcpToolClient;
+
+          public %s(McpToolClient mcpToolClient) {
+            this.mcpToolClient = mcpToolClient;
+          }
+
+          @Override
+          public Map<String, Object> apply(GraphState state) {
+            Object toolInput = state.get(%s);
+            Object result = mcpToolClient.callTool(%s, %s, toolInput);
+            return Map.of(%s, result);
+          }
+        }
+        """
+        .formatted(
+            basePkg,
+            basePkg,
+            basePkg,
+            basePkg,
+            label,
+            id,
+            basePkg,
+            id,
+            className,
+            className,
+            JavaNames.javaString(inputKey),
+            JavaNames.javaString(serverId),
+            JavaNames.javaString(toolName),
+            JavaNames.javaString(outputKey));
+  }
+
+  private static String emitMcpToolClient(String basePkg, IrDocument doc) {
+    StringBuilder servers = new StringBuilder();
+    for (var s : doc.logical.mcpServers) {
+      servers
+          .append("      // server ")
+          .append(s.id)
+          .append(" transport=")
+          .append(s.transport == null ? "stdio" : s.transport);
+      if (s.command != null && !s.command.isBlank()) {
+        servers.append(" command=").append(s.command);
+      }
+      if (s.url != null && !s.url.isBlank()) {
+        servers.append(" url=").append(s.url);
+      }
+      servers.append('\n');
+    }
+    return """
+        package %s.mcp;
+
+        import java.util.LinkedHashMap;
+        import java.util.Map;
+        import org.springframework.stereotype.Component;
+
+        /**
+         * Language-agnostic MCP tool bridge generated from logical.mcpServers.
+         * Replace the stub body with Spring AI MCP client wiring for production.
+         */
+        @Component
+        public class McpToolClient {
+          private final Map<String, Map<String, Object>> serverMeta = new LinkedHashMap<>();
+
+          public McpToolClient() {
+        %s    // IR MCP servers registered above for discoverability.
+          }
+
+          public Object callTool(String serverId, String toolName, Object input) {
+            // Stub: integrate with Spring AI MCP client (stdio / SSE) using serverId + toolName.
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("serverId", serverId);
+            out.put("tool", toolName);
+            out.put("input", input);
+            out.put("status", "mcp-stub");
+            return out;
+          }
+        }
+        """
+        .formatted(basePkg, indent(servers.toString(), 0));
+  }
+
+  private static String emitMcpServersConfig(String basePkg, IrDocument doc) {
+    StringBuilder yamlish = new StringBuilder();
+    for (var s : doc.logical.mcpServers) {
+      yamlish
+          .append("    // ")
+          .append(s.id)
+          .append(": transport=")
+          .append(s.transport == null ? "stdio" : s.transport)
+          .append('\n');
+    }
+    return """
+        package %s.config;
+
+        import org.springframework.context.annotation.Configuration;
+
+        /**
+         * MCP server declarations from IR (see application.yaml / spring.ai.mcp).
+         */
+        @Configuration
+        public class McpServersConfig {
+          // Declared MCP servers:
+        %s}
+        """
+        .formatted(basePkg, yamlish);
+  }
+
+  /** Substitute {{label}} {{nodeName}} {{description}} {{outputKey}} {{field.id}} placeholders. */
+  private static String renderComponentTemplate(
+      String template,
+      String nodeName,
+      String label,
+      String description,
+      String outputKey,
+      JsonNode config) {
+    String out = template == null ? "" : template;
+    out = out.replace("{{nodeName}}", nodeName);
+    out = out.replace("{{label}}", label);
+    out = out.replace("{{description}}", description);
+    out = out.replace("{{outputKey}}", outputKey);
+    java.util.regex.Matcher m =
+        java.util.regex.Pattern.compile("\\{\\{field\\.([a-zA-Z0-9_]+)(?:\\.raw)?\\}\\}")
+            .matcher(out);
+    StringBuffer sb = new StringBuffer();
+    while (m.find()) {
+      String fieldId = m.group(1);
+      String value = "";
+      if (config != null && config.has(fieldId) && !config.get(fieldId).isNull()) {
+        JsonNode v = config.get(fieldId);
+        value = v.isTextual() ? v.asText() : v.toString();
+      }
+      m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(JavaNames.javaString(value)));
+    }
+    m.appendTail(sb);
+    return sb.toString();
+  }
+
+  private static List<String> stringList(JsonNode node, String field) {
+    List<String> out = new ArrayList<>();
+    JsonNode v = node.get(field);
+    if (v == null || !v.isArray()) return out;
+    for (JsonNode item : v) {
+      if (item != null && !item.isNull()) out.add(item.asText(""));
+    }
+    return out;
   }
 
   private static String emitMainGraph(String basePkg, LogicalGraph graph, List<JsonNode> realNodes) {

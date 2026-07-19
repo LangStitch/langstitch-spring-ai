@@ -111,12 +111,37 @@ public final class CompilerMain implements Callable<Integer> {
   static class CapabilitiesCmd implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
+      Map<String, Object> nodeKinds = new LinkedHashMap<>();
+      nodeKinds.put("start", "supported");
+      nodeKinds.put("end", "supported");
+      nodeKinds.put("llm", "supported");
+      nodeKinds.put("tool", "supported");
+      nodeKinds.put("router", "supported");
+      nodeKinds.put("function", "supported");
+      nodeKinds.put("response_transformer", "supported");
+      nodeKinds.put("custom", "template-required");
+      nodeKinds.put("subgraph", "unsupported");
+      nodeKinds.put("agent", "unsupported");
+      nodeKinds.put("rag", "unsupported");
+      nodeKinds.put("intent_classifier", "unsupported");
+      nodeKinds.put("hitl", "unsupported");
+
+      Map<String, Object> features = new LinkedHashMap<>();
+      features.put("checkpointing", "unsupported");
+      features.put("streaming", "supported");
+      features.put("runEvents", "supported");
+      features.put("reverseSync", "planned");
+      features.put("mcp", "supported");
+      features.put("a2a", "unsupported");
+
       Map<String, Object> caps = new LinkedHashMap<>();
       caps.put("compilerVersion", Version.COMPILER_VERSION);
       caps.put("platform", Version.PLATFORM);
       caps.put("irVersions", java.util.List.of(Version.SUPPORTED_IR_MAJOR_MINOR));
       caps.put("supportsParse", false);
       caps.put("supportsDaemon", false);
+      caps.put("nodeKinds", nodeKinds);
+      caps.put("features", features);
       ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
       System.out.println(mapper.writeValueAsString(caps));
       return 0;

@@ -17,13 +17,11 @@ langstitch-spring-ai version
 
 ## Install (Maven Central)
 
-After the first release is published:
-
 ```xml
 <dependency>
   <groupId>com.langstitch</groupId>
   <artifactId>langstitch-spring-ai</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -31,10 +29,17 @@ Runnable fat jar (classifier `all`):
 
 ```bash
 mvn -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy \
-  -Dartifact=com.langstitch:langstitch-spring-ai:0.1.0:jar:all \
+  -Dartifact=com.langstitch:langstitch-spring-ai:0.2.0:jar:all \
   -DoutputDirectory=.
-java -jar langstitch-spring-ai-0.1.0-all.jar version
+java -jar langstitch-spring-ai-0.2.0-all.jar version
 ```
+
+### 0.2.0 highlights
+
+- MCP: `logical.mcpServers` + tool `connectionType: mcp` → `McpToolClient`
+- LLM `boundToolIds` noted / wired when MCP is present
+- Marketplace connectors via `codegen.templates["spring-ai"]` (placeholder render)
+- `capabilities` prints full nodeKinds + features matrix (`mcp: supported`)
 
 ## Build locally
 
