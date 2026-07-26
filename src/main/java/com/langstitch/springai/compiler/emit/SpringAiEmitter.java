@@ -381,6 +381,45 @@ public final class SpringAiEmitter {
     String artifact =
         doc.name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]+", "-").replaceAll("^-+|-+$", "");
     if (artifact.isEmpty()) artifact = "langstitch-spring-ai-app";
+    boolean usesMcp =
+        doc.logical.mcpServers != null && !doc.logical.mcpServers.isEmpty();
+    StringBuilder extraDeps = new StringBuilder();
+    if (usesMcp) {
+      extraDeps.append(
+          """
+                      <dependency>
+                        <groupId>org.springframework.ai</groupId>
+                        <artifactId>spring-ai-starter-mcp-client</artifactId>
+                      </dependency>
+              """);
+    }
+    if (doc.logical.componentRegistry != null) {
+      for (var comp : doc.logical.componentRegistry) {
+        if (comp.codegen == null) continue;
+        var byPlat = comp.codegen.dependenciesByPlatform;
+        java.util.List<String> deps =
+            byPlat != null && byPlat.get("spring-ai") != null
+                ? byPlat.get("spring-ai")
+                : comp.codegen.dependencies;
+        if (deps == null) continue;
+        for (String dep : deps) {
+          if (dep == null || dep.isBlank()) continue;
+          // Accept "group:artifact:version" Maven coordinates from pack authors.
+          String[] parts = dep.split(":");
+          if (parts.length < 2) continue;
+          String group = parts[0].trim();
+          String art = parts[1].trim();
+          String ver = parts.length >= 3 ? parts[2].trim() : null;
+          extraDeps.append("            <dependency>\n");
+          extraDeps.append("              <groupId>").append(group).append("</groupId>\n");
+          extraDeps.append("              <artifactId>").append(art).append("</artifactId>\n");
+          if (ver != null && !ver.isBlank()) {
+            extraDeps.append("              <version>").append(ver).append("</version>\n");
+          }
+          extraDeps.append("            </dependency>\n");
+        }
+      }
+    }
     return """
         <?xml version="1.0" encoding="UTF-8"?>
         <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -430,14 +469,7 @@ public final class SpringAiEmitter {
               <groupId>org.springframework.ai</groupId>
               <artifactId>spring-ai-starter-model-openai</artifactId>
             </dependency>
-            <!-- Optional: enable when wiring real MCP transports in McpToolClient -->
-            <!--
-            <dependency>
-              <groupId>org.springframework.ai</groupId>
-              <artifactId>spring-ai-starter-mcp-client</artifactId>
-            </dependency>
-            -->
-            <dependency>
+        %s            <dependency>
               <groupId>org.springframework.boot</groupId>
               <artifactId>spring-boot-starter-test</artifactId>
               <scope>test</scope>
@@ -453,7 +485,7 @@ public final class SpringAiEmitter {
           </build>
         </project>
         """
-        .formatted(basePkg, artifact, doc.projectVersion, doc.name);
+        .formatted(basePkg, artifact, doc.projectVersion, doc.name, extraDeps.toString());
   }
 
   private static String emitReadme(IrDocument doc) {
@@ -807,30 +839,37 @@ public final class SpringAiEmitter {
     String label = text(node, "label");
     String className = JavaNames.className(id) + "Node";
     String outputKey = text(node, "outputKey").isEmpty() ? "output" : text(node, "outputKey");
-    String code = text(node, "code");
-    StringBuilder commented = new StringBuilder();
-    if (code.isBlank()) {
-      commented.append("    // (empty)\n");
+    String code = "";
+    JsonNode bodies = node.get("bodiesByPlatform");
+    if (bodies != null && bodies.has("spring-ai") && !bodies.get("spring-ai").asText("").isBlank()) {
+      code = bodies.get("spring-ai").asText();
     } else {
-      for (String line : code.split("\n", -1)) {
-        commented.append("    // ").append(line).append('\n');
-      }
+      code = text(node, "code");
     }
-    // Heuristic for the router-workflow classify fixture.
+    StringBuilder commented = new StringBuilder();
     String body;
-    if (code.contains("refund") && code.contains("category") && code.contains("query")) {
+    if (!code.isBlank() && looksLikeJava(code)) {
+      commented.append("    // (inline Java from IR)\n");
+      body = indent(code, 4) + "\n";
+    } else if (code.contains("refund") && code.contains("category") && code.contains("query")) {
+      // Legacy fixture heuristic for router-workflow classify.
+      commented.append("    // (legacy fixture translation)\n");
       body =
           """
               String query = state.getString("query").toLowerCase();
               String category = query.contains("refund") ? "refund" : "general";
               Object result = category;
           """;
+    } else if (code.isBlank()) {
+      commented.append("    // (empty)\n");
+      body = "    Object result = null;\n";
     } else {
-      body =
-          """
-              // Translate the IR function body above into Java.
-              Object result = null;
-          """;
+      throw new UnsupportedFeatureException(
+          "function:body",
+          "function node '"
+              + id
+              + "' has no bodiesByPlatform[\"spring-ai\"] Java body; refusing to silently stub Python code",
+          id);
     }
     return """
         package %s.nodes;
@@ -951,17 +990,18 @@ public final class SpringAiEmitter {
                   () ->
                       new CompileException(
                           "tool node '" + id + "' references unknown registry tool '" + toolId + "'"));
-      if (tool.javaCode != null && !tool.javaCode.isBlank()) {
+      String fromBodies =
+          tool.bodiesByPlatform != null ? tool.bodiesByPlatform.get("spring-ai") : null;
+      if (fromBodies != null && !fromBodies.isBlank()) {
+        code = fromBodies;
+      } else if (tool.javaCode != null && !tool.javaCode.isBlank()) {
         code = tool.javaCode;
-      } else if (tool.pythonCode != null && !tool.pythonCode.isBlank()) {
-        // Language-agnostic IR may ship pythonCode; emit as comments + stub.
-        code = tool.pythonCode;
       } else {
         throw new UnsupportedFeatureException(
             "tool:" + tool.source,
             "registry tool '"
                 + toolId
-                + "' has no javaCode; Spring AI compiler requires Java tool bodies or MCP connection",
+                + "' has no bodiesByPlatform[spring-ai] or javaCode; Spring AI compiler requires Java tool bodies or MCP connection",
             id);
       }
     } else {
@@ -971,19 +1011,23 @@ public final class SpringAiEmitter {
           id);
     }
 
-    StringBuilder commented = new StringBuilder();
-    String body;
-    if (code != null && !code.isBlank() && looksLikeJava(code)) {
-      body = indent(code, 4) + "\n";
-      commented.append("    // (inline Java from IR)\n");
-    } else {
-      if (code != null) {
-        for (String line : code.split("\n", -1)) {
-          commented.append("    // ").append(line).append('\n');
-        }
-      }
-      body = "    Object result = null;\n";
+    if (code == null || code.isBlank()) {
+      throw new UnsupportedFeatureException(
+          "tool:body",
+          "tool node '" + id + "' has an empty Java body for spring-ai",
+          id);
     }
+    if (!looksLikeJava(code)) {
+      throw new UnsupportedFeatureException(
+          "tool:body",
+          "tool node '"
+              + id
+              + "' body does not look like Java; provide bodiesByPlatform[\"spring-ai\"] that assigns `result`",
+          id);
+    }
+    StringBuilder commented = new StringBuilder();
+    String body = indent(code, 4) + "\n";
+    commented.append("    // (inline Java from IR)\n");
 
     return """
         package %s.nodes;

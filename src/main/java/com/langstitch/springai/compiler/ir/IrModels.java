@@ -19,6 +19,8 @@ public final class IrModels {
     public String projectVersion = "0.1.0";
     public Logical logical = new Logical();
     public Target target = new Target();
+    /** Multi-platform pack targets; compilers still use target.platform for a single emit. */
+    public List<String> supportedPlatforms = new ArrayList<>();
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
@@ -107,6 +109,10 @@ public final class IrModels {
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static class Codegen {
     public Map<String, String> templates = new LinkedHashMap<>();
+    public java.util.List<String> imports;
+    public java.util.List<String> dependencies;
+    public Map<String, java.util.List<String>> importsByPlatform = new LinkedHashMap<>();
+    public Map<String, java.util.List<String>> dependenciesByPlatform = new LinkedHashMap<>();
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
@@ -115,6 +121,8 @@ public final class IrModels {
     public String source;
     public String pythonCode;
     public String javaCode;
+    /** Per-platform bodies keyed by TargetPlatform id (preferred over javaCode). */
+    public Map<String, String> bodiesByPlatform = new LinkedHashMap<>();
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
